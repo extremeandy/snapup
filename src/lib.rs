@@ -3,7 +3,7 @@
 #![cfg_attr(all(doc, CHANNEL_NIGHTLY), feature(doc_auto_cfg))]
 
 //! Abstractions for handling snapshots with streams of subsequent updates.
-#![doc(html_root_url = "https://docs.rs/snapup/0.1.1/")]
+#![doc(html_root_url = "https://docs.rs/snapup/0.1.2/")]
 
 mod join_with_parent;
 
@@ -90,6 +90,39 @@ where
                     move |(key, value)| (key, value.map(f.clone()))
                 })
             }
+        });
+
+        SnapshotWithUpdates::new(snapshot, updates)
+    }
+
+    pub fn filter_keys(
+        self,
+        f: impl Fn(&Key) -> bool + Clone,
+    ) -> SnapshotWithUpdates<
+        impl IntoIterator<Item = (Key, Value)>,
+        impl Stream<Item = impl IntoIterator<Item = (Key, Option<Value>)>>,
+    > {
+        let snapshot = self.snapshot.into_iter().filter({
+            let f = f.clone();
+            move |(key, _)| f(key)
+        });
+
+        let updates = self.updates.filter_map(move |updates| {
+            let updates = updates
+                .into_iter()
+                .filter({
+                    let f = f.clone();
+                    move |(key, _)| f(key)
+                })
+                .collect::<Vec<_>>();
+
+            let result = if updates.len() == 0 {
+                None
+            } else {
+                Some(updates)
+            };
+
+            future::ready(result)
         });
 
         SnapshotWithUpdates::new(snapshot, updates)
