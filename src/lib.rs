@@ -3,7 +3,7 @@
 #![cfg_attr(all(doc, CHANNEL_NIGHTLY), feature(doc_auto_cfg))]
 
 //! Abstractions for handling snapshots with streams of subsequent updates.
-#![doc(html_root_url = "https://docs.rs/snapup/0.1.3/")]
+#![doc(html_root_url = "https://docs.rs/snapup/0.1.4/")]
 
 mod join_with_parent;
 
@@ -66,6 +66,30 @@ where
             }
 
             future::ready(Some(state.clone()))
+        });
+
+        SnapshotWithUpdates::new(snapshot, updates)
+    }
+
+    pub fn map_keys<R>(
+        self,
+        f: impl Fn(Key) -> R + Clone,
+    ) -> SnapshotWithUpdates<
+        impl IntoIterator<Item = (R, Value)>,
+        impl Stream<Item = impl IntoIterator<Item = (R, Option<Value>)>>,
+    > {
+        let snapshot = self.snapshot.into_iter().map({
+            let f = f.clone();
+            move |(key, value)| (f(key), value)
+        });
+
+        let updates = self.updates.map({
+            move |updates| {
+                updates.into_iter().map({
+                    let f = f.clone();
+                    move |(key, value)| (f(key), value)
+                })
+            }
         });
 
         SnapshotWithUpdates::new(snapshot, updates)
