@@ -3,12 +3,12 @@
 #![cfg_attr(all(doc, CHANNEL_NIGHTLY), feature(doc_auto_cfg))]
 
 //! Abstractions for handling snapshots with streams of subsequent updates.
-#![doc(html_root_url = "https://docs.rs/snapup/0.1.2/")]
+#![doc(html_root_url = "https://docs.rs/snapup/0.1.3/")]
 
 mod join_with_parent;
 
 use futures::{Stream, StreamExt};
-use std::{future, hash::Hash};
+use std::{collections::HashSet, future, hash::Hash};
 
 /// Wraps a 'snapshot' (initial data) with updates (some kind of update which
 /// can be applied to the snapshot to update).
@@ -91,6 +91,55 @@ where
                 })
             }
         });
+
+        SnapshotWithUpdates::new(snapshot, updates)
+    }
+
+    pub fn filter(
+        self,
+        f: impl Fn(&Key, &Value) -> bool + Clone,
+    ) -> SnapshotWithUpdates<
+        impl IntoIterator<Item = (Key, Value)>,
+        impl Stream<Item = impl IntoIterator<Item = (Key, Option<Value>)>>,
+    > {
+        let snapshot = self
+            .snapshot
+            .into_iter()
+            .filter({
+                let f = f.clone();
+                move |(key, value)| f(key, value)
+            })
+            .collect::<Vec<_>>();
+
+        let filtered_keys = snapshot
+            .iter()
+            .map(|(key, _)| key)
+            .cloned()
+            .collect::<HashSet<_>>();
+
+        let updates = self
+            .updates
+            .scan(filtered_keys, move |filtered_keys, updates| {
+                let mut filtered_updates = vec![];
+
+                for (key, value) in updates {
+                    match value {
+                        Some(value) if f(&key, &value) => {
+                            filtered_keys.insert(key.to_owned());
+                            filtered_updates.push((key, Some(value)));
+                        }
+                        _ => {
+                            if filtered_keys.remove(&key) {
+                                filtered_updates.push((key, None));
+                            }
+                        }
+                    }
+                }
+
+                let result = (filtered_updates.len() > 0).then_some(filtered_updates);
+
+                future::ready(result)
+            });
 
         SnapshotWithUpdates::new(snapshot, updates)
     }
