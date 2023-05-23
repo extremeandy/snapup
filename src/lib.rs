@@ -3,7 +3,7 @@
 #![cfg_attr(all(doc, CHANNEL_NIGHTLY), feature(doc_auto_cfg))]
 
 //! Abstractions for handling snapshots with streams of subsequent updates.
-#![doc(html_root_url = "https://docs.rs/snapup/0.1.4/")]
+#![doc(html_root_url = "https://docs.rs/snapup/0.1.5/")]
 
 mod join_with_parent;
 
@@ -199,5 +199,57 @@ where
         });
 
         SnapshotWithUpdates::new(snapshot, updates)
+    }
+}
+
+#[cfg(feature = "tokio-sync")]
+impl<T: Clone + Send + Sync + 'static> From<tokio::sync::watch::Receiver<T>>
+    for SnapshotWithUpdates<T, futures::stream::Skip<tokio_stream::wrappers::WatchStream<T>>>
+{
+    fn from(mut rx: tokio::sync::watch::Receiver<T>) -> Self {
+        let rx_cloned = rx.clone();
+        let guard = rx.borrow_and_update();
+
+        // Skip the first value, since WatchStream always emits the current value of the Receiver channel,
+        // but we want the 'updates' stream to only contain changes.
+        let updates = tokio_stream::wrappers::WatchStream::new(rx_cloned).skip(1);
+
+        // Drop the guard now that the stream is constructed. Now we can be sure we won't miss any
+        // values on the stream due to any race conditions where a value was written to the receiver
+        // while we were creating the stream. Holding the guard blocks any values being written
+        // to the Receiver until we drop the guard.
+        let snapshot = guard.clone();
+
+        SnapshotWithUpdates { snapshot, updates }
+    }
+}
+
+mod tests {
+    #[cfg(feature = "tokio-sync")]
+    #[test]
+    fn test_from_tokio_watch_receiver() {
+        use futures::StreamExt;
+        use tokio_test::{assert_pending, assert_ready_eq};
+
+        let waker = futures::task::noop_waker_ref();
+        let mut cx = std::task::Context::from_waker(&waker);
+
+        let (tx, rx) = tokio::sync::watch::channel(3);
+
+        let (snapshot, mut updates) = super::SnapshotWithUpdates::from(rx).into_inner();
+
+        assert_eq!(snapshot, 3);
+        assert_pending!(updates.poll_next_unpin(&mut cx));
+
+        tx.send(4).unwrap();
+        assert_ready_eq!(updates.poll_next_unpin(&mut cx), Some(4));
+        assert_pending!(updates.poll_next_unpin(&mut cx));
+
+        tx.send(5).unwrap();
+        assert_ready_eq!(updates.poll_next_unpin(&mut cx), Some(5));
+        assert_pending!(updates.poll_next_unpin(&mut cx));
+
+        drop(tx);
+        assert_ready_eq!(updates.poll_next_unpin(&mut cx), None);
     }
 }
