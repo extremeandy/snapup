@@ -3,7 +3,7 @@
 #![cfg_attr(all(doc, CHANNEL_NIGHTLY), feature(doc_auto_cfg))]
 
 //! Abstractions for handling snapshots with streams of subsequent updates.
-#![doc(html_root_url = "https://docs.rs/snapup/0.1.5/")]
+#![doc(html_root_url = "https://docs.rs/snapup/0.1.6/")]
 
 mod join_with_parent;
 
@@ -34,6 +34,16 @@ impl<Snapshot, Updates> SnapshotWithUpdates<Snapshot, Updates> {
     pub fn into_inner(self) -> (Snapshot, Updates) {
         let Self { snapshot, updates } = self;
         (snapshot, updates)
+    }
+
+    /// Creates [`SnapshotWithUpdates`] by taking the first item of the stream as the 'snapshot'
+    /// and subsequent items as 'updates'. Returns [`None`] if the stream doesn't contain any items.
+    pub async fn from_stream(mut stream: Updates) -> Option<Self>
+    where
+        Updates: Stream<Item = Snapshot> + Unpin,
+    {
+        let first = stream.next().await?;
+        Some(Self::new(first, stream))
     }
 }
 
