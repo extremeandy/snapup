@@ -3,11 +3,11 @@
 #![cfg_attr(all(doc, CHANNEL_NIGHTLY), feature(doc_auto_cfg))]
 
 //! Abstractions for handling snapshots with streams of subsequent updates.
-#![doc(html_root_url = "https://docs.rs/snapup/0.1.6/")]
+#![doc(html_root_url = "https://docs.rs/snapup/0.1.7/")]
 
 mod join_with_parent;
 
-use futures::{Stream, StreamExt};
+use futures::{stream, Stream, StreamExt};
 use std::{collections::HashSet, future, hash::Hash};
 
 /// Wraps a 'snapshot' (initial data) with updates (some kind of update which
@@ -44,6 +44,17 @@ impl<Snapshot, Updates> SnapshotWithUpdates<Snapshot, Updates> {
     {
         let first = stream.next().await?;
         Some(Self::new(first, stream))
+    }
+
+    /// Converts [`SnapshotWithUpdates`] into a [`Stream`] of [`SnapshotOrUpdate`]
+    pub fn into_stream(self) -> impl Stream<Item = SnapshotOrUpdate<Snapshot, Updates::Item>>
+    where
+        Updates: Stream,
+    {
+        let Self { snapshot, updates } = self;
+
+        stream::once(future::ready(SnapshotOrUpdate::Snapshot(snapshot)))
+            .chain(updates.map(SnapshotOrUpdate::Update))
     }
 }
 
@@ -232,6 +243,12 @@ impl<T: Clone + Send + Sync + 'static> From<tokio::sync::watch::Receiver<T>>
 
         SnapshotWithUpdates { snapshot, updates }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnapshotOrUpdate<Snapshot, Update> {
+    Snapshot(Snapshot),
+    Update(Update),
 }
 
 mod tests {

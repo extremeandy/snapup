@@ -12,6 +12,10 @@ The following icons are used to distinguish breaking changes from non-breaking c
 - 🔥: Breaking change (high impact: will require code changes for most users)
 - 💔: Breaking change (low impact: won't require code changes for most users)
 
+## 0.1.7
+
+- Added `into_stream` to convert `SnapshotWithUpdates` into a `Stream` of `SnapshotOrUpdate`
+
 ## 0.1.6
 
 ### Added
