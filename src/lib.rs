@@ -251,6 +251,7 @@ pub enum SnapshotOrUpdate<Snapshot, Update> {
     Update(Update),
 }
 
+#[cfg(test)]
 mod tests {
     #[cfg(feature = "tokio-sync")]
     #[test]
