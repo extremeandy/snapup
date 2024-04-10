@@ -11,7 +11,7 @@ How to use with Cargo:
 
 ```toml
 [dependencies]
-snapup = "0.1.7"
+snapup = "0.1.8"
 ```
 
 ## License

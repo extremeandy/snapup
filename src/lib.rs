@@ -3,7 +3,7 @@
 #![cfg_attr(all(doc, CHANNEL_NIGHTLY), feature(doc_auto_cfg))]
 
 //! Abstractions for handling snapshots with streams of subsequent updates.
-#![doc(html_root_url = "https://docs.rs/snapup/0.1.7/")]
+#![doc(html_root_url = "https://docs.rs/snapup/0.1.8/")]
 
 mod join_with_parent;
 
@@ -55,6 +55,16 @@ impl<Snapshot, Updates> SnapshotWithUpdates<Snapshot, Updates> {
 
         stream::once(future::ready(SnapshotOrUpdate::Snapshot(snapshot)))
             .chain(updates.map(SnapshotOrUpdate::Update))
+    }
+
+    /// Converts [`SnapshotWithUpdates`] into a [`Stream`] snapshots when Updates::Item is Snapshot
+    pub fn flatten(self) -> impl Stream<Item = Snapshot>
+    where
+        Updates: Stream<Item = Snapshot>,
+    {
+        let Self { snapshot, updates } = self;
+
+        stream::once(future::ready(snapshot)).chain(updates)
     }
 }
 
@@ -253,6 +263,10 @@ pub enum SnapshotOrUpdate<Snapshot, Update> {
 
 #[cfg(test)]
 mod tests {
+    use futures::{stream, StreamExt};
+
+    use crate::SnapshotWithUpdates;
+
     #[cfg(feature = "tokio-sync")]
     #[test]
     fn test_from_tokio_watch_receiver() {
@@ -279,5 +293,16 @@ mod tests {
 
         drop(tx);
         assert_ready_eq!(updates.poll_next_unpin(&mut cx), None);
+    }
+
+    #[tokio::test]
+    async fn test_flatten() {
+        let snapshot = 1;
+        let updates = stream::iter([2, 3, 4]);
+
+        let snapup = SnapshotWithUpdates::new(snapshot, updates);
+
+        let actual = snapup.flatten().collect::<Vec<_>>().await;
+        assert_eq!(actual, vec![1, 2, 3, 4]);
     }
 }
